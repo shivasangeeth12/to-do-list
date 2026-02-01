@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlowState | Focus To-Do</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #0f172a;
+            overflow-x: hidden;
+        }
+
+        /* Animated Background */
+        .blob {
+            position: absolute;
+            filter: blur(80px);
+            z-index: -1;
+            opacity: 0.6;
+            animation: float 10s infinite ease-in-out;
+        }
+        .blob-1 { top: -10%; left: -10%; width: 500px; height: 500px; background: #7c3aed; animation-delay: 0s; }
+        .blob-2 { bottom: -10%; right: -10%; width: 600px; height: 600px; background: #2563eb; animation-delay: 2s; }
+        .blob-3 { top: 40%; left: 40%; width: 400px; height: 400px; background: #db2777; animation-delay: 4s; }
+
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+        }
+
+        /* Glassmorphism */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.4); }
+
+        /* Task Animations */
+        .task-item {
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-origin: center;
+        }
+        .task-item.adding { animation: slideIn 0.4s ease-out forwards; }
+        .task-item.removing { animation: slideOut 0.4s ease-in forwards; opacity: 0; transform: translateX(20px); }
+        .task-item:hover { transform: translateY(-2px); background: rgba(255,255,255,0.08); }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(50px); }
+        }
+
+        /* Checkbox Animation */
+        .custom-checkbox input:checked + div {
+            background-color: #10b981;
+            border-color: #10b981;
+        }
+        .custom-checkbox input:checked + div svg {
+            stroke-dashoffset: 0;
+        }
+        .check-svg {
+            stroke-dasharray: 24;
+            stroke-dashoffset: 24;
+            transition: stroke-dashoffset 0.3s ease-in-out;
+        }
+
+        /* Progress Ring */
+        .progress-ring__circle {
+            transition: stroke-dashoffset 0.5s ease-in-out;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+
+        /* Confetti Canvas */
+        #confetti-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 50;
+        }
+    </style>
+</head>
+<body class="text-white min-h-screen flex items-center justify-center p-4 sm:p-8">
+
+    <!-- Background Elements -->
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- Main App Container -->
+    <main class="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-12 gap-6 h-[85vh]">
+        
+        <!-- Sidebar / Stats Panel -->
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            <!-- Profile / Date -->
+            <div class="glass-panel rounded-3xl p-6 flex flex-col justify-between h-full relative overflow-hidden group">
+                <div class="absolute top-0 right-0 p-4 opacity-20 group-hover:opacity-40 transition-opacity">
+                    <i class="fas fa-quote-right text-6xl"></i>
+                </div>
+                
+                <div>
+                    <h2 id="greeting" class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-200 to-pink-200">Good Morning</h2>
+                    <p id="current-date" class="text-slate-400 text-sm mt-1">Loading date...</p>
+                </div>
+
+                <!-- Progress Circle -->
+                <div class="flex flex-col items-center justify-center my-6">
+                    <div class="relative w-40 h-40">
+                        <svg class="w-full h-full" viewBox="0 0 100 100">
+                            <circle class="text-slate-700 stroke-current" stroke-width="8" cx="50" cy="50" r="40" fill="transparent"></circle>
+                            <circle id="progress-ring" class="text-indigo-500 progress-ring__circle stroke-current" stroke-width="8" stroke-linecap="round" cx="50" cy="50" r="40" fill="transparent" stroke-dasharray="251.2" stroke-dashoffset="251.2"></circle>
+                        </svg>
+                        <div class="absolute top-0 left-0 w-full h-full flex flex-col items-center justify-center">
+                            <span id="progress-text" class="text-3xl font-bold">0%</span>
+                            <span class="text-xs text-slate-400 uppercase tracking-wider">Done</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center text-sm">
+                        <span class="text-slate-400"><i class="fas fa-list-ul mr-2"></i>Pending</span>
+                        <span id="count-pending" class="font-bold bg-slate-700 px-2 py-0.5 rounded-md">0</span>
+                    </div>
+                    <div class="flex justify-between items-center text-sm">
+                        <span class="text-emerald-400"><i class="fas fa-check mr-2"></i>Completed</span>
+                        <span id="count-completed" class="font-bold bg-emerald-900/50 text-emerald-400 px-2 py-0.5 rounded-md">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add Task Input (Mobile/Desktop unified) -->
+            <div class="glass-panel rounded-3xl p-2 flex items-center gap-2 shadow-lg shadow-indigo-500/20">
+                <div class="pl-4 text-slate-400">
+                    <i class="fas fa-plus"></i>
+                </div>
+                <input type="text" id="task-input" placeholder="Add a new task..." class="w-full bg-transparent border-none outline-none text-white placeholder-slate-500 h-12 px-2">
+                <button id="add-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl px-6 py-3 font-semibold transition-colors">
+                    Add
+                </button>
+            </div>
+        </aside>
+
+        <!-- Task List Area -->
+        <section class="lg:col-span-8 glass-panel rounded-3xl flex flex-col overflow-hidden relative">
+            <!-- Header / Filters -->
+            <header class="p-6 border-b border-white/10 flex justify-between items-center bg-slate-900/20">
+                <h1 class="text-xl font-bold flex items-center gap-2">
+                    <i class="fas fa-layer-group text-indigo-400"></i> Tasks
+                </h1>
+                <div class="flex bg-slate-800/50 rounded-lg p-1">
+                    <button class="filter-btn active px-3 py-1 rounded-md text-sm font-medium transition-all bg-slate-700 text-white shadow-sm" data-filter="all">All</button>
+                    <button class="filter-btn px-3 py-1 rounded-md text-sm font-medium text-slate-400 hover:text-white transition-all" data-filter="active">Active</button>
+                    <button class="filter-btn px-3 py-1 rounded-md text-sm font-medium text-slate-400 hover:text-white transition-all" data-filter="completed">Done</button>
+                </div>
+            </header>
+
+            <!-- List Container -->
+            <div class="flex-1 overflow-y-auto p-6 relative">
+                <ul id="task-list" class="space-y-3 pb-20">
+                    <!-- Tasks will be injected here via JS -->
+                </ul>
+                
+                <!-- Empty State -->
+                <div id="empty-state" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center p-8 opacity-0 transition-opacity duration-500">
+                    <div class="w-24 h-24 bg-slate-800/50 rounded-full flex items-center justify-center mb-4 animate-pulse">
+                        <i class="fas fa-clipboard-check text-4xl text-slate-600"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-slate-300">All caught up!</h3>
+                    <p class="text-slate-500 mt-2 max-w-xs">You have no tasks on your list. Enjoy your free time or add a new goal.</p>
+                </div>
+            </div>
+            
+            <!-- Bottom Gradient Fade -->
+            <div class="absolute bottom-0 left-0 w-full h-12 bg-gradient-to-t from-slate-900/80 to-transparent pointer-events-none"></div>
+        </section>
+    </main>
+
+    <script>
+        // --- State Management ---
+        let tasks = [
+            { id: 1, text: "Review project proposal", completed: false, createdAt: Date.now() },
+            { id: 2, text: "Design system architecture", completed: true, createdAt: Date.now() - 10000 },
+            { id: 3, text: "Team meeting at 2 PM", completed: false, createdAt: Date.now() - 20000 }
+        ];
+        let currentFilter = 'all';
+
+        // --- DOM Elements ---
+        const taskListEl = document.getElementById('task-list');
+        const inputEl = document.getElementById('task-input');
+        const addBtn = document.getElementById('add-btn');
+        const emptyStateEl = document.getElementById('empty-state');
+        const progressRing = document.getElementById('progress-ring');
+        const progressText = document.getElementById('progress-text');
+        const countPendingEl = document.getElementById('count-pending');
+        const countCompletedEl = document.getElementById('count-completed');
+        const filterBtns = document.querySelectorAll('.filter-btn');
+        const greetingEl = document.getElementById('greeting');
+        const dateEl = document.getElementById('current-date');
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            updateDate();
+            renderTasks();
+            updateStats();
+            
+            // Event Listeners
+            addBtn.addEventListener('click', addTask);
+            inputEl.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') addTask();
+            });
+
+            filterBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    // UI Update
+                    filterBtns.forEach(b => {
+                        b.classList.remove('bg-slate-700', 'text-white', 'shadow-sm');
+                        b.classList.add('text-slate-400');
+                    });
+                    btn.classList.remove('text-slate-400');
+                    btn.classList.add('bg-slate-700', 'text-white', 'shadow-sm');
+                    
+                    // Logic Update
+                    currentFilter = btn.dataset.filter;
+                    renderTasks();
+                });
+            });
+        });
+
+        // --- Core Logic ---
+
+        function updateDate() {
+            const now = new Date();
+            const hours = now.getHours();
+            let greeting = "Good Morning";
+            if (hours >= 12 && hours < 17) greeting = "Good Afternoon";
+            else if (hours >= 17) greeting = "Good Evening";
+            
+            greetingEl.textContent = greeting;
+            
+            const options = { weekday: 'long', month: 'long', day: 'numeric' };
+            dateEl.textContent = now.toLocaleDateString('en-US', options);
+        }
+
+        function addTask() {
+            const text = inputEl.value.trim();
+            if (!text) return;
+
+            const newTask = {
+                id: Date.now(),
+                text: text,
+                completed: false,
+                createdAt: Date.now()
+            };
+
+            tasks.unshift(newTask); // Add to top
+            inputEl.value = '';
+            renderTasks();
+            updateStats();
+        }
+
+        function toggleTask(id) {
+            const task = tasks.find(t => t.id === id);
+            if (task) {
+                task.completed = !task.completed;
+                renderTasks();
+                updateStats();
+                
+                if (task.completed) {
+                    triggerConfetti(document.getElementById(`task-${id}`));
+                }
+            }
+        }
+
+        function deleteTask(id) {
+            const taskEl = document.getElementById(`task-${id}`);
+            if (taskEl) {
+                taskEl.classList.add('removing');
+                setTimeout(() => {
+                    tasks = tasks.filter(t => t.id !== id);
+                    renderTasks();
+                    updateStats();
+                }, 400); // Match CSS animation duration
+            }
+        }
+
+        function updateStats() {
+            const total = tasks.length;
+            const completed = tasks.filter(t => t.completed).length;
+            const pending = total - completed;
+            const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+
+            // Update Text
+            countPendingEl.textContent = pending;
+            countCompletedEl.textContent = completed;
+            progressText.textContent = `${percent}%`;
+
+            // Update Ring
+            const radius = progressRing.r.baseVal.value;
+            const circumference = radius * 2 * Math.PI;
+            const offset = circumference - (percent / 100) * circumference;
+            
+            progressRing.style.strokeDashoffset = offset;
+            
+            // Color change based on progress
+            if (percent === 100) {
+                progressRing.classList.remove('text-indigo-500');
+                progressRing.classList.add('text-emerald-400');
+            } else {
+                progressRing.classList.add('text-indigo-500');
+                progressRing.classList.remove('text-emerald-400');
+            }
+        }
+
+        function renderTasks() {
+            taskListEl.innerHTML = '';
+            
+            const filteredTasks = tasks.filter(task => {
+                if (currentFilter === 'active') return !task.completed;
+                if (currentFilter === 'completed') return task.completed;
+                return true;
+            });
+
+            if (filteredTasks.length === 0) {
+                emptyStateEl.classList.remove('hidden');
+                // Small delay to allow display:block to apply before opacity transition
+                setTimeout(() => emptyStateEl.classList.remove('opacity-0'), 10);
+            } else {
+                emptyStateEl.classList.add('opacity-0');
+                setTimeout(() => emptyStateEl.classList.add('hidden'), 300);
+            }
+
+            filteredTasks.forEach(task => {
+                const li = document.createElement('li');
+                li.id = `task-${task.id}`;
+                li.className = `task-item adding group flex items-center justify-between p-4 rounded-2xl bg-slate-800/40 border border-white/5 hover:border-white/10 mb-3`;
+                
+                li.innerHTML = `
+                    <div class="flex items-center gap-4 flex-1 cursor-pointer" onclick="toggleTask(${task.id})">
+                        <label class="custom-checkbox relative flex items-center cursor-pointer">
+                            <input type="checkbox" class="sr-only" ${task.completed ? 'checked' : ''}>
+                            <div class="w-6 h-6 border-2 border-slate-500 rounded-full flex items-center justify-center transition-colors duration-300">
+                                <svg class="check-svg w-4 h-4 text-white pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                        </label>
+                        <span class="text-lg transition-all duration-300 ${task.completed ? 'text-slate-500 line-through decoration-slate-600' : 'text-slate-100'}">
+                            ${escapeHtml(task.text)}
+                        </span>
+                    </div>
+                    <button onclick="deleteTask(${task.id})" class="text-slate-600 hover:text-rose-500 transition-colors p-2 rounded-lg hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 focus:opacity-100">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                `;
+                taskListEl.appendChild(li);
+            });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // --- Confetti Effect (Canvas) ---
+        const canvas = document.getElementById('confetti-canvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function triggerConfetti(element) {
+            if(!element) return;
+            
+            const rect = element.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+
+            for (let i = 0; i < 30; i++) {
+                particles.push(createParticle(x, y));
+            }
+            
+            if (!isAnimating) {
+                requestAnimationFrame(animateConfetti);
+            }
+        }
+
+        function createParticle(x, y) {
+            const colors = ['#a78bfa', '#34d399', '#f472b6', '#60a5fa', '#fbbf24'];
+            return {
+                x: x,
+                y: y,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                size: Math.random() * 5 + 2,
+                speedX: (Math.random() - 0.5) * 10,
+                speedY: (Math.random() - 0.5) * 10,
+                life: 100
+            };
+        }
+
+        let isAnimating = false;
+
+        function animateConfetti() {
+            isAnimating = true;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            particles.forEach((p, index) => {
+                p.x += p.speedX;
+                p.y += p.speedY;
+                p.life -= 2;
+                p.speedY += 0.2; // Gravity
+
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life / 100;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+
+                if (p.life <= 0) {
+                    particles.splice(index, 1);
+                }
+            });
+
+            if (particles.length > 0) {
+                requestAnimationFrame(animateConfetti);
+            } else {
+                isAnimating = false;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+        }
+
+    </script>
+</body>
+</html>
